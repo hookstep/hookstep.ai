@@ -10,7 +10,7 @@ interface UseVideoQueueReturn {
   currentIndex: number;
   isLoading: boolean;
   error: string | null;
-  addVideosFromQuery: (query: string) => Promise<void>;
+  addVideosFromQuery: (query: string, replace?: boolean) => Promise<void>;
   goToNext: () => void;
   goToPrevious: () => void;
   clearQueue: () => void;
@@ -22,17 +22,33 @@ export function useVideoQueue(): UseVideoQueueReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchedQueriesRef = useRef<Set<string>>(new Set());
+  const currentQueryRef = useRef<string>('');
 
-  const addVideosFromQuery = useCallback(async (query: string) => {
+  const addVideosFromQuery = useCallback(async (query: string, replace: boolean = false) => {
     if (!query.trim()) return;
     
-    // Normalize query to avoid duplicate searches
     const normalizedQuery = query.trim().toLowerCase();
-    if (searchedQueriesRef.current.has(normalizedQuery)) {
-      return; // Already searched this query
+    
+    // If replacing, clear old videos and reset
+    if (replace) {
+      // Check if this is a different query than the current one
+      if (normalizedQuery !== currentQueryRef.current.toLowerCase()) {
+        setVideos([]);
+        setCurrentIndex(0);
+        searchedQueriesRef.current.clear();
+        currentQueryRef.current = query.trim();
+      } else {
+        // Same query, don't search again
+        return;
+      }
+    } else {
+      // Normalize query to avoid duplicate searches
+      if (searchedQueriesRef.current.has(normalizedQuery)) {
+        return; // Already searched this query
+      }
+      searchedQueriesRef.current.add(normalizedQuery);
     }
     
-    searchedQueriesRef.current.add(normalizedQuery);
     setIsLoading(true);
     setError(null);
 
@@ -66,16 +82,32 @@ export function useVideoQueue(): UseVideoQueueReturn {
         description: item.snippet.description,
       }));
 
-      // Add new videos to the queue (stack on top)
-      setVideos(prev => {
-        // Filter out duplicates
-        const existingIds = new Set(prev.map(v => v.id));
-        const uniqueNewVideos = newVideos.filter(v => !existingIds.has(v.id));
-        return [...uniqueNewVideos, ...prev];
-      });
-      
-      // Adjust current index since we added videos at the beginning
-      setCurrentIndex(prev => prev + newVideos.length);
+      // If replacing, set new videos and start from first video
+      if (replace) {
+        setVideos(newVideos);
+        setCurrentIndex(0);
+        searchedQueriesRef.current.add(normalizedQuery);
+      } else {
+        // Add new videos to the queue (stack on top)
+        setVideos(prev => {
+          // Filter out duplicates
+          const existingIds = new Set(prev.map(v => v.id));
+          const uniqueNewVideos = newVideos.filter(v => !existingIds.has(v.id));
+          const updatedVideos = [...uniqueNewVideos, ...prev];
+          
+          // Adjust current index: if no videos existed before, start at 0
+          // Otherwise, adjust by the number of unique new videos added
+          setTimeout(() => {
+            if (prev.length === 0) {
+              setCurrentIndex(0);
+            } else if (uniqueNewVideos.length > 0) {
+              setCurrentIndex(prevIndex => prevIndex + uniqueNewVideos.length);
+            }
+          }, 0);
+          
+          return updatedVideos;
+        });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to search videos';
       setError(message);
@@ -106,6 +138,7 @@ export function useVideoQueue(): UseVideoQueueReturn {
     setVideos([]);
     setCurrentIndex(0);
     searchedQueriesRef.current.clear();
+    currentQueryRef.current = '';
   }, []);
 
   return {

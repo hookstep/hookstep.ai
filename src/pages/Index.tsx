@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { ListeningIndicator } from '@/components/ListeningIndicator';
-import { VideoFeed } from '@/components/VideoFeed';
+import { YouTubeReel } from '@/components/YouTubeReel';
 import { useContinuousListening } from '@/hooks/useContinuousListening';
 import { useVideoQueue } from '@/hooks/useVideoQueue';
 import { Mic, AlertCircle, Music } from 'lucide-react';
@@ -13,7 +13,7 @@ const Index = () => {
   const [appState, setAppState] = useState<AppState>('idle');
   const [latestQuery, setLatestQuery] = useState('');
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false); // Start unmuted so users can hear the music
 
   const {
     videos,
@@ -27,11 +27,14 @@ const Index = () => {
   } = useVideoQueue();
 
   const handleNewTranscript = useCallback((text: string) => {
-    if (text.trim()) {
+    if (text.trim() && text.trim() !== latestQuery) {
+      // Clear old videos and search for new ones when new music is detected
       setLatestQuery(text.trim());
-      addVideosFromQuery(text.trim());
+      // Unmute when new music is detected so users can hear it
+      setIsMuted(false);
+      addVideosFromQuery(text.trim(), true); // true = replace old videos
     }
-  }, [addVideosFromQuery]);
+  }, [addVideosFromQuery, latestQuery]);
 
   const { 
     isListening, 
@@ -67,6 +70,21 @@ const Index = () => {
     }
   }, [permissionGranted, isSupported]);
 
+  // Auto-search when new transcript is detected (different from previous)
+  useEffect(() => {
+    if (currentTranscript && currentTranscript.trim() && currentTranscript.trim() !== latestQuery) {
+      // Debounce to avoid too many searches
+      const timer = setTimeout(() => {
+        setLatestQuery(currentTranscript.trim());
+        // Unmute when new music is detected so users can hear the changing music
+        setIsMuted(false);
+        addVideosFromQuery(currentTranscript.trim(), true); // true = replace old videos with new ones
+      }, 1000); // Wait 1 second after transcript changes
+
+      return () => clearTimeout(timer);
+    }
+  }, [currentTranscript, latestQuery, addVideosFromQuery]);
+
   const handleStartListening = useCallback(() => {
     clearQueue();
     setLatestQuery('');
@@ -98,6 +116,7 @@ const Index = () => {
 
   // Show video feed when we have videos
   const hasVideos = videos.length > 0;
+  const showListeningIndicator = appState === 'listening' || (hasVideos && isListening);
 
   // Render based on state
   const renderContent = () => {
@@ -139,20 +158,126 @@ const Index = () => {
       );
     }
 
-    // Show video feed if we have videos (listening continues in background)
+    // Show videos with listening indicator at top
     if (hasVideos) {
       return (
-        <VideoFeed 
-          videos={videos}
-          currentIndex={currentIndex}
-          onNext={goToNext}
-          onPrevious={goToPrevious}
-          onListenAgain={handleListenAgain}
-          searchQuery={latestQuery}
-          isLoadingMore={isSearching}
-          isMuted={isMuted}
-          onToggleMute={handleToggleMute}
-        />
+        <div className="flex h-full w-full flex-col">
+          {/* Beautiful Listening Indicator at top */}
+          {showListeningIndicator && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="shrink-0 border-b border-primary/20 bg-gradient-to-r from-background via-background/98 to-background backdrop-blur-xl shadow-lg"
+            >
+              <div className="flex items-center justify-between gap-4 px-6 py-4">
+                <div className="flex items-center gap-4">
+                  {/* Animated Microphone Icon */}
+                  <div className="relative">
+                    <motion.div
+                      className="absolute inset-0 rounded-full bg-primary/20"
+                      animate={isListening ? {
+                        scale: [1, 1.5, 1],
+                        opacity: [0.5, 0, 0.5],
+                      } : {}}
+                      transition={{
+                        duration: 1.5,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                    />
+                    <motion.div
+                      className="relative flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/80 shadow-lg"
+                      animate={isListening ? { scale: [1, 1.05, 1] } : {}}
+                      transition={{
+                        duration: 0.8,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                    >
+                      <Mic className="h-5 w-5 text-primary-foreground" strokeWidth={2.5} />
+                    </motion.div>
+                  </div>
+
+                  {/* Status Text */}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-foreground">
+                        {isListening ? 'Listening to music...' : 'Processing audio...'}
+                      </span>
+                      {isListening && (
+                        <div className="flex items-center gap-1">
+                          {[0, 1, 2].map((i) => (
+                            <motion.span
+                              key={i}
+                              className="h-2 w-2 rounded-full bg-primary"
+                              animate={{
+                                y: [0, -6, 0],
+                                opacity: [0.5, 1, 0.5],
+                              }}
+                              transition={{
+                                duration: 0.8,
+                                repeat: Infinity,
+                                delay: i * 0.2,
+                                ease: "easeInOut",
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {currentTranscript && (
+                      <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="text-xs font-medium text-primary/80 truncate max-w-md"
+                      >
+                        Detected: "{currentTranscript}"
+                      </motion.span>
+                    )}
+                    {isSearching && (
+                      <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="text-xs text-muted-foreground"
+                      >
+                        Searching for dance videos...
+                      </motion.span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Search Status Badge */}
+                {isSearching && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 ring-1 ring-primary/20"
+                  >
+                    <motion.div
+                      className="h-2 w-2 rounded-full bg-primary"
+                      animate={{ scale: [1, 1.2, 1], opacity: [1, 0.5, 1] }}
+                      transition={{ duration: 1, repeat: Infinity }}
+                    />
+                    <span className="text-xs font-medium text-primary">Searching</span>
+                  </motion.div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Videos below */}
+          <div className="flex-1 min-h-0">
+            <YouTubeReel 
+              videos={videos}
+              currentIndex={currentIndex}
+              onNext={goToNext}
+              onPrevious={goToPrevious}
+              isMuted={isMuted}
+              onToggleMute={handleToggleMute}
+              autoPlay={true}
+            />
+          </div>
+        </div>
       );
     }
 
@@ -214,11 +339,11 @@ const Index = () => {
   };
 
   return (
-    <div className="flex h-screen w-full flex-col bg-background">
+    <div className="flex h-screen w-full flex-col bg-background overflow-hidden">
       <AnimatePresence mode="wait">
         <motion.div
           key={hasVideos ? 'feed' : appState}
-          className="flex flex-1 items-center justify-center"
+          className={`flex flex-1 ${hasVideos ? '' : 'items-center justify-center'}`}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
