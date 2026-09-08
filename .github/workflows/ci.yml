@@ -1,4 +1,12 @@
-# Lint, test, and build the Vite frontend; validate backend dependencies. Does not deploy (use Vercel + recognize workflow).
+# Lint, test, and build the Vite frontend; validate backend dependencies.
+#
+# This workflow does not deploy. The frontend deploy used to happen through a
+# Vercel project wired to this repo by the Vercel GitHub App; that project was
+# deleted on 2026-09-08 because it was a duplicate of the real deployment and
+# every push to this repo produced a failed-deployment email. Nothing here
+# deploys the frontend any more - wire up whichever target is real before
+# relying on a push to publish anything. The backend deploy is
+# deploy-recognize-cloudrun.yml (Cloud Run, project jr-consulting-co).
 
 name: CI
 
